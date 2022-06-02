@@ -67,7 +67,8 @@ class RedirectionMiddleware implements MiddlewareInterface
         $method = $site->getConfiguration()['SiteLanguageRedirectionMethod'] ?? self::REDIRECT_METHOD_BROWSER;
 
         if ($method === self::REDIRECT_METHOD_BROWSER) {
-            $response = $this->getRedirectResponseByBrowserLanguage($request, $cookieName);
+            // $response = $this->getRedirectResponseByBrowserLanguage($request, $cookieName);
+            $response = $this->getRedirectResponseByBrowserLanguageForUsVisitors($request, $cookieName);
         }
         if ($method === self::REDIRECT_METHOD_IPADDRESS) {
             $response = $this->getRedirectResponseByIPAddress($request, $cookieName);
@@ -195,6 +196,57 @@ class RedirectionMiddleware implements MiddlewareInterface
 
         $response = new RedirectResponse($uri, 307);
         return $response->withAddedHeader('Set-Cookie', $cookieName . '=' . $matchingSiteLanguage->getLanguageId() . '; Path=/; Max-Age=' . (60*60*24*30));
+    }
+
+    /**
+     * Returns redirect response based on user accept language and redirects to US domain
+     *
+     * @param ServerRequestInterface $request
+     * @param string $cookieName
+     *
+     * @return ResponseInterface|null
+     */
+    protected function getRedirectResponseByBrowserLanguageForUsVisitors(ServerRequestInterface $request): ?ResponseInterface
+    {
+        $parameters = $request->getQueryParams();
+        // Ignore the redirect if query parameter bypassRedirect=1 is present
+        if (isset($parameters['bypassRedirect']) && $parameters['bypassRedirect'] == '1') {
+            return null;
+        }
+
+        if ($request->getUri()->getHost() !== 'www.aimpoint.com') {
+            return null;
+        }
+
+        $acceptLanguages = $request->getHeader('accept-language');
+        if (!empty($acceptLanguages)) {
+            $acceptLanguages = array_unique(
+                array_map(function ($language) {
+                    return strtolower(explode(';', $language)[0]);
+                }, explode(',', $acceptLanguages[0]))
+            );
+        } else {
+            // Do not redirect if no accept languages are set.
+            return null;
+        }
+
+        return $this->redirectUsVisitorToUsDomain($acceptLanguages[0]);
+    }
+
+    /**
+     * Redirect user to US Aimpoint domain (https://aimpoint.us/)
+     *
+     * @param $language
+     * @return ResponseInterface|null
+     */
+    protected function redirectUsVisitorToUsDomain($language): ?ResponseInterface
+    {
+        if ($language === 'en-us') {
+            $uri = 'https://aimpoint.us/';
+            return new RedirectResponse($uri, 307);
+        }
+
+        return null;
     }
 
     /**
